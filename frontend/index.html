@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tra cứu lộ trình xe buýt · Neo4j</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">🚌</span>
+    <div>
+      <h1>Tra cứu lộ trình xe buýt</h1>
+      <p>Đồ thị Neo4j · dữ liệu mô phỏng TP. Hồ Chí Minh</p>
+    </div>
+  </div>
+  <div class="stats" id="stats"></div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="search" class="active">Tìm đường</button>
+  <button data-tab="stations">Trạm dừng</button>
+  <button data-tab="routes">Tuyến xe</button>
+  <button data-tab="graph">Đồ thị mạng lưới</button>
+</nav>
+
+<div id="banner" class="banner" hidden></div>
+
+<main>
+  <!-- ============ TÌM ĐƯỜNG ============ -->
+  <section id="tab-search" class="tab active">
+    <form id="searchForm" class="panel search">
+      <div class="field grow">
+        <label for="origin">Điểm đi</label>
+        <input id="origin" list="stationList" placeholder="Chọn hoặc gõ tên trạm…" autocomplete="off" required>
+      </div>
+      <button type="button" id="swap" class="icon-btn" title="Đổi chiều">⇄</button>
+      <div class="field grow">
+        <label for="dest">Điểm đến</label>
+        <input id="dest" list="stationList" placeholder="Chọn hoặc gõ tên trạm…" autocomplete="off" required>
+      </div>
+      <div class="field">
+        <label for="metric">Tối ưu theo</label>
+        <select id="metric">
+          <option value="time">Thời gian</option>
+          <option value="distance">Quãng đường</option>
+        </select>
+      </div>
+      <label class="check"><input type="checkbox" id="initialWait" checked> Tính thời gian chờ xe ban đầu</label>
+      <button class="btn primary" type="submit">Tìm đường</button>
+    </form>
+
+    <div id="results" class="results"></div>
+    <div id="pathGraphWrap" class="panel" hidden>
+      <div class="panel-head">
+        <h3>Lộ trình trên đồ thị</h3>
+        <span class="muted" id="pathGraphHint"></span>
+      </div>
+      <div id="pathGraph" class="graph-box short"></div>
+    </div>
+  </section>
+
+  <!-- ============ TRẠM ============ -->
+  <section id="tab-stations" class="tab">
+    <div class="toolbar">
+      <input id="stationSearch" type="search" placeholder="Tìm theo tên trạm hoặc quận/huyện…">
+      <button class="btn primary" id="addStation">+ Thêm trạm</button>
+    </div>
+    <div class="panel flush">
+      <table class="table">
+        <thead><tr><th>Mã</th><th>Tên trạm</th><th>Quận/Huyện</th><th>Tọa độ</th><th>Tuyến đi qua</th><th></th></tr></thead>
+        <tbody id="stationRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ TUYẾN ============ -->
+  <section id="tab-routes" class="tab">
+    <div class="split">
+      <aside class="panel route-list">
+        <div class="panel-head">
+          <h3>Danh sách tuyến</h3>
+          <button class="btn small primary" id="addRoute">+ Thêm</button>
+        </div>
+        <div id="routeList"></div>
+      </aside>
+      <div id="routeDetail" class="panel route-detail">
+        <p class="muted pad">Chọn một tuyến ở bên trái để xem và chỉnh sửa.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ĐỒ THỊ ============ -->
+  <section id="tab-graph" class="tab">
+    <div class="toolbar">
+      <label class="inline">Lọc theo tuyến
+        <select id="graphRoute"><option value="">Tất cả các tuyến</option></select>
+      </label>
+      <span class="muted">Nút = (:Station) đặt theo tọa độ thật · Cạnh = [:CONNECTS_TO] tô màu theo tuyến. Rê chuột lên cạnh để xem trọng số.</span>
+    </div>
+    <div class="panel">
+      <div id="fullGraph" class="graph-box tall"></div>
+      <div id="legend" class="legend"></div>
+    </div>
+  </section>
+</main>
+
+<datalist id="stationList"></datalist>
+
+<!-- Hộp thoại trạm -->
+<dialog id="stationDlg">
+  <form method="dialog" id="stationForm">
+    <h3 id="stationDlgTitle">Thêm trạm</h3>
+    <div class="grid2">
+      <div class="field"><label>Mã trạm</label><input name="id" placeholder="Tự sinh nếu để trống"></div>
+      <div class="field"><label>Quận/Huyện</label><input name="district"></div>
+    </div>
+    <div class="field"><label>Tên trạm *</label><input name="name" required></div>
+    <div class="grid2">
+      <div class="field"><label>Vĩ độ (lat) *</label><input name="lat" type="number" step="any" required></div>
+      <div class="field"><label>Kinh độ (lon) *</label><input name="lon" type="number" step="any" required></div>
+    </div>
+    <p class="hint" id="stationHint"></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn" data-close>Hủy</button>
+      <button class="btn primary" type="submit">Lưu</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Hộp thoại tuyến mới -->
+<dialog id="routeDlg" class="wide">
+  <form method="dialog" id="routeForm">
+    <h3>Thêm tuyến mới</h3>
+    <div class="grid3">
+      <div class="field"><label>Mã tuyến *</label><input name="code" required maxlength="10" placeholder="vd. 53"></div>
+      <div class="field"><label>Giãn cách (phút) *</label><input name="headway_min" type="number" min="1" max="240" value="15" required></div>
+      <div class="field"><label>Màu</label><input name="color" type="color" value="#2563eb"></div>
+    </div>
+    <div class="field"><label>Tên tuyến *</label><input name="name" required placeholder="vd. Bến Thành – ĐH Bách Khoa"></div>
+    <div class="grid2">
+      <div class="field"><label>Giờ xuất bến đầu *</label><input name="first_departure" type="time" value="05:00" required></div>
+      <div class="field"><label>Giờ xuất bến cuối *</label><input name="last_departure" type="time" value="20:30" required></div>
+    </div>
+    <label class="lbl">Các trạm theo thứ tự (tối thiểu 2) *</label>
+    <div id="newRouteStops"></div>
+    <div class="dlg-actions">
+      <button type="button" class="btn" data-close>Hủy</button>
+      <button class="btn primary" type="submit">Tạo tuyến</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
